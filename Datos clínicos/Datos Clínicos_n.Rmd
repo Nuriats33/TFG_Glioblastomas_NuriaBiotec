@@ -1,0 +1,277 @@
+---
+title: "Datos Clínicos"
+author: "Nuria"
+date: "2023-03-08"
+output:html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Datos Clínicos pacientes Luis Miguel
+
+
+```{r importar datos, warning=FALSE}
+# Usamos la librería openxlsx para leer los datos clínicos de los pacientes del excel
+library(openxlsx)
+
+# Leemos el excel y lo guardamos como un dataframe
+dfClinical <- openxlsx::read.xlsx("../DATOS CLÍNICOS asociados a RNA-seq.xlsx", "Hoja1")
+
+
+# Los datos de la matriz estan ordenados como si los números fuesen carácteres, por lo que voy a transformar la variable "Sample" del dataframe de los datos clínicos a carácter, y después lo ordenaré de menor a mayor
+dfClinical$Samples <- as.character(dfClinical$Samples)
+dfClinical <- dfClinical[order(dfClinical$Samples),]
+
+# Elimino la fila del paciente 88 en los datos clinicos
+dfClinical <- dfClinical[dfClinical$Samples != "88",]
+
+# Mostramos el dataframe en Rstudio
+#View(dfClinical)
+```
+
+```{r, warning=FALSE}
+# Cargamos las librerias gráficas que vamos a utilizar
+library(ggplot2)
+library(gridExtra)
+
+# Para el dendograma
+library(ggdendro)
+library(htmltools)
+```
+En primer lugar se precisa la realización de un análisis descriptivo inicial para conocer los valores de las variables con las que se va a trabajar y asegurarse que cumplen los requisitos necesarios.
+
+## Edad del paciente cuando se diagnostico la enfermedad
+```{r}
+
+# Hacemos un resumen de los datos de la edad a la que se dignisticó la enfermedad
+sprintf("Edad de diagnóstico")
+summary(dfClinical$Age.at.diagnosis)
+
+# Podemos usar la función "quantile" para sacar los cuartiles
+lQuartiles <- quantile(lAge, probs=c(0.25, 0.5, 0.75))
+
+# Definimos una función, a la cual, dado un valor, devolverá un texto dependiendo de si se encuentra en el primer, segundo, tercer o cuarto cuartil 
+AssingQuartil <- function(iValue, lQuartiles, lNames) {
+  if (iValue < lQuartiles[1]) {
+    return(lNames[1])
+  } else if (iValue >= lQuartiles[1] && iValue < lQuartiles[2]) {
+    return(lNames[2])
+  } else if (iValue >= lQuartiles[2] && iValue < lQuartiles[3]) {
+    return(lNames[3])
+  } else if (iValue >= lQuartiles[3]) {
+    return(lNames[4])
+  } else {
+    return(NULL)
+  }
+}
+
+# Aplicamos la función sobre la lista de edades. Deshacemos la lista para convertirlo en vector, convertimos a factor, y añadimos como columna en el dataframe
+dfClinical$fAge <- as.factor(unlist(lapply(lAge, function(x) AssingQuartil(x, lQuartiles, c("quartil 1", "quartil 2", "quartil 3", "quartil 4")))))
+
+# Comprobamos el número de pacientes en cada cuartil
+sprintf("Table number of patients / quartile")
+table(dfClinical$fAge)
+```
+
+## Género del paciente
+
+```{r}
+# Mostramos algunos datos:
+sprintf("Género de los pacientes")
+table(dfClinical$Gender)
+```
+## Localización del tumor 
+
+```{r}
+# Definimos una función que clasifica estos datos según el hemisferio cerebral
+AssignCerebralHemisphere <- function(sValue) {
+  if (grepl("[Ll]eft", sValue)) {
+    return("Izquierda")
+  } else if (grepl("[Rr]ight", sValue)) {
+    return("Derecha")
+  } else {
+    return(NULL)
+  }
+}
+
+# Creamos un factor con esta función
+dfClinical$fTumorHemisphere <- as.factor(unlist(lapply(dfClinical$Tumor.localization, function(x) AssignCerebralHemisphere(x))))
+
+# Mostramos cuantos pacientes hay por grupo
+sprintf("Hemisferio cerebral")
+table(dfClinical$fTumorHemisphere)
+
+# Hacemos lo mismo para clasificar en función del lóbulo cerebral
+AssignCerebralLobule <- function(sValue) {
+  if (grepl("[Oo]ccipital", sValue)) {
+    return("occipital")
+  } else if (grepl("[Pp]ariet", sValue)) {
+    return("parietal")
+  } else if (grepl("[Ff]ront", sValue)) {
+    return("frontal")
+  } else if (grepl("[Tt]emporal", sValue)) {
+    return("temporal")
+  } else {
+    return(NULL)
+  }
+}
+
+# Creamos un factor con esta función
+dfClinical$fTumorLobule <- as.factor(unlist(lapply(dfClinical$Tumor.localization, function(x) AssignCerebralLobule(x))))
+
+# Mostramos cuantos pacientes hay por grupo
+sprintf("Lóbulo cerebral")
+table(dfClinical$fTumorLobule)
+
+# Podemos contabilizar los individuos con los dos factores conjuntamente
+sprintf("Lóbulo-hemisferio cerebral")
+table(dfClinical$fTumorHemisphere, dfClinical$fTumorLobule)
+```
+## Supervivencia
+
+  Analisis preliminar de la supervivencia 
+
+```{r, warning=FALSE}
+
+library(survival)
+
+# Estimación de la supervivencia sin variables predictoras
+fit <- survfit(Surv(Survival,Status)~ 1, data = dfClinical)
+fit
+#Hacemos un resumen de estos datos 
+summary(fit)
+```
+
+``` {r, warning=FALSE}
+
+library(survminer)
+
+#Dibujamos la cuerva de supervivencia 
+ggsurvplot(fit, data = dfClinical, 
+           palette = "blue", 
+           conf.int = FALSE, 
+           surv.median.line = "hv")
+```
+
+Tengo que relacionar la supervivencia con la edad, el género y la localización del tumor 
+
+##Supervivencia vs Edad 
+
+```{r, warning=FALSE}
+
+corte <-surv_cutpoint(dfClinical,time="Survival",event="Status",variables="Age.at.diagnosis") 
+corte
+```
+```{r}
+dfClinical$RAge <- ifelse(dfClinical$Age.at.diagnosis>=62,"+62","-62")
+fit <- survfit(Surv(Survival,Status)~ RAge, data = dfClinical)
+fit
+
+ggsurvplot(fit, data = dfClinical, 
+           conf.int = TRUE, 
+           conf.int.style = "step", 
+           surv.median.line = "hv", 
+           pval = TRUE)
+```
+
+
+## Supervivencia vs Género  
+
+```{r, warning=FALSE}
+#relacionamos la variable de supervivencia con el género
+fit <- survfit(Surv(Survival,Status)~ Gender, data = dfClinical)
+fit
+
+ggsurvplot(fit, data = dfClinical, 
+           conf.int = TRUE, 
+           conf.int.style = "step", 
+           surv.median.line = "hv", 
+           pval = TRUE)
+```
+
+## Supervivencia vs Localización del tumor 
+
+``` {r,warning=FALSE}
+#Relacionamos la supervivencia con la localización del tumor
+fit <- survfit(Surv(Survival,Status)~ Tumor.localization, data = dfClinical)
+fit
+
+#Dibujamos la curva de supervivencia
+ggsurvplot(fit, data = dfClinical, 
+           conf.int = TRUE, 
+           conf.int.style = "step", 
+           surv.median.line = "hv", 
+           pval = TRUE)
+
+```
+
+
+```{r,warning=FALSE}
+#Relacionamos la supervivencia con el hemisferio cerebral
+fit <- survfit(Surv(lSurvival,Status)~ fTumorHemisphere, data = dfClinical)
+fit
+
+#Dibujamos la curva de supervivencia
+ggsurvplot(fit, data = dfClinical, 
+           conf.int = TRUE, 
+           conf.int.style = "step", 
+           surv.median.line = "hv", 
+           pval = TRUE)
+```
+```{r,warning=FALSE}
+#Relacionamos la supervivencia con el lóbulo cerebral
+fit <- survfit(Surv(lSurvival,Status)~ fTumorLobule, data = dfClinical)
+fit
+
+#Dibujamos la curva de supervivencia
+ggsurvplot(fit, data = dfClinical, 
+           conf.int = TRUE, 
+           conf.int.style = "step", 
+           surv.median.line = "hv", 
+           pval = TRUE)
+```
+
+
+## Grado vs Edad 
+
+```{r}
+#Dibujamos la gráfica boxplot
+ggplot(dfClinical,aes(Grade,Age.at.diagnosis))+geom_boxplot() + 
+  theme_bw() + 
+  labs(x = "Grado del glioblastoma", y ="Edad de diagnóstico")
+```
+## Grado vs Género 
+
+```{r}
+#Tabla de contingencia 
+table(dfClinical$Grade,dfClinical$Gender)
+
+#Dibujamos una gráfica de barras
+ggplot(dfClinical, aes(x = Grade, fill = Gender)) + 
+       geom_bar() + 
+       labs(x = "Grado", y = "Frecuencia",fill = "Género") + 
+       theme_bw()
+
+```
+
+## Grado vs Localización del tumor
+
+```{r}
+#Dibujamos una gráfica de barras
+ggplot(dfClinical, aes(x = Grade, fill = fTumorHemisphere)) + 
+       geom_bar() + 
+       labs(x = "Grado", y = "Frecuencia",fill = "Hemisferio cerebral") + 
+       theme_bw()
+
+```
+
+```{r}
+#Dibujamos una gráfica de barras
+ggplot(dfClinical, aes(x = Grade, fill = fTumorLobule)) + 
+       geom_bar() + 
+       labs(x = "Grado", y = "Frecuencia",fill = "Lóbulo cerebral") + 
+       theme_bw()
+
+```
