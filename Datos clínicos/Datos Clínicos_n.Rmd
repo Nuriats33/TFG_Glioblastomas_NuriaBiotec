@@ -2,7 +2,7 @@
 title: "Datos Clínicos"
 author: "Nuria"
 date: "2023-03-08"
-output:html_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -11,13 +11,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Datos Clínicos pacientes Luis Miguel
 
+Se va a realizar un análisis explorativo (AED) sobre los datos clínicos de los pacientes a estudio  con la finalidad de conocer la calidad de los datos y predecir algunas respuestas a nuestras preguntas. 
 
 ```{r importar datos, warning=FALSE}
 # Usamos la librería openxlsx para leer los datos clínicos de los pacientes del excel
 library(openxlsx)
 
 # Leemos el excel y lo guardamos como un dataframe
-dfClinical <- openxlsx::read.xlsx("../DATOS CLÍNICOS asociados a RNA-seq.xlsx", "Hoja1")
+dfClinical <- openxlsx::read.xlsx("./DATOS CLÍNICOS asociados a RNA-seq.xlsx", "Hoja1")
 
 
 # Los datos de la matriz estan ordenados como si los números fuesen carácteres, por lo que voy a transformar la variable "Sample" del dataframe de los datos clínicos a carácter, y después lo ordenaré de menor a mayor
@@ -44,11 +45,12 @@ En primer lugar se precisa la realización de un análisis descriptivo inicial p
 
 ## Edad del paciente cuando se diagnostico la enfermedad
 ```{r}
-
+# Guardamos como un vector la variable
+lAge <- (dfClinical$Age.at.diagnosis)
+lAge <- lAge[!is.na(lAge)]
 # Hacemos un resumen de los datos de la edad a la que se dignisticó la enfermedad
 sprintf("Edad de diagnóstico")
 summary(dfClinical$Age.at.diagnosis)
-
 # Podemos usar la función "quantile" para sacar los cuartiles
 lQuartiles <- quantile(lAge, probs=c(0.25, 0.5, 0.75))
 
@@ -210,7 +212,7 @@ ggsurvplot(fit, data = dfClinical,
 
 ```{r,warning=FALSE}
 #Relacionamos la supervivencia con el hemisferio cerebral
-fit <- survfit(Surv(lSurvival,Status)~ fTumorHemisphere, data = dfClinical)
+fit <- survfit(Surv(Survival,Status)~ fTumorHemisphere, data = dfClinical)
 fit
 
 #Dibujamos la curva de supervivencia
@@ -222,7 +224,7 @@ ggsurvplot(fit, data = dfClinical,
 ```
 ```{r,warning=FALSE}
 #Relacionamos la supervivencia con el lóbulo cerebral
-fit <- survfit(Surv(lSurvival,Status)~ fTumorLobule, data = dfClinical)
+fit <- survfit(Surv(Survival,Status)~ fTumorLobule, data = dfClinical)
 fit
 
 #Dibujamos la curva de supervivencia
