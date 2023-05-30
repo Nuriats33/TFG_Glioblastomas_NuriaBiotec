@@ -131,13 +131,14 @@ nrow(res_f)
 
 #Nombramos la columna de los genes como "gen" para poder fusionarla posteriormente y nos quedamos unicamente con esta columna 
 res_fn <-tibble::rownames_to_column(res_2, "gen")
-res_fn <- select(res_fn,gen)
+res_fn <- select(res_df,gen)
 
 ##Nombramos la columna de los genes como "gen" para poder fusionarla posteriormente 
 countData_f <-tibble::rownames_to_column(countData, "gen")
+countData_f
 
 #Fusionamos ambos macos de datos con la función left_join
-count_df <- as.data.frame(left_join(res_df,countData2), by = join_by(gen))
+count_df <- as.data.frame(left_join(res_fn,countData_f), by = join_by(gen))
 
 #Visualizamos los resultados 
 count_df
@@ -250,11 +251,33 @@ ggplot(pca_genes, aes(Dim.1, Dim.2)) + geom_point() + theme_bw()
 #Ordenamos los genes según su relevancia en el grado IV 
 #sort(pca_genes[,1], decreasing = TRUE)
 
-puedo quedarme con los > 0 en un daraframe en Dim.1 y luego fusionar con el original, por lo que en teoría me quedaría solo con los que son significativos en grado IV y los nombres ya los tendría asiq good 
+#puedo quedarme con los > 0 en un daraframe en Dim.1 y luego fusionar con el original, por lo que en teoría me quedaría solo con los que son significativos en grado IV y los nombres ya los tendría asiq good 
 #voy a probarlo 
 genesIV <- as.data.frame(subset(pca_genes,pca_genes$Dim.1 >0)) 
-genesIV <- tibble::rownames_to_column(genesIV, "genesgradoIV") 
-genesIV <- as.data.frame(genesIV[,1])
+
+```
+
+```{r}
+# Instalamos el paquete EnsDB.Hsapiens.v86
+library(BiocManager)
+BiocManager::install("EnsDb.Hsapiens.v86")
+library(EnsDb.Hsapiens.v86)
+
+#eliminamos el sufijo de los IDs porque con estos numeros la funcion no actúa
+IDgenesIV <- rownames(genesIV)
+lIDgenesIV <- unlist(strsplit(IDgenesIV, "\\."))[seq(1,2 * length(namesgenesIV), 2)]
+
+#Realizamos la funcion necesaria para relacionar los IDs de los genes con su nombre
+columns(EnsDb.Hsapiens.v86)
+cols <- c("SYMBOL", "GENENAME")
+nombregenesIV <- select(EnsDb.Hsapiens.v86, keys = lIDgenesIV , columns = cols, keytype = "GENEID")
+
+
+#Guardamos la lista en un excel para trabajar con ellos en la Gene Ontology 
+library(writexl)
+write_xlsx(nombregenesIV, path = "C:/Users/nuria/OneDrive - UMH/TFG/TFG_Glioblastomas_NuriaBiotec/PCA/genesIV.xlsx")
+```
+
 
 # Ya tengo los genes que me interesan, ya los puedo llevar a un análisis de función biológica...
 ```
