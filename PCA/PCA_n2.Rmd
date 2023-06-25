@@ -1,33 +1,32 @@
 ---
-title: "PCA_n"
+title: "PCA"
 author: "Nuria"
 date: "2023-04-23"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r,warning=FALSE}
+#Cargamos las librerías que vamos a utilizar
+library(writexl)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library("DESeq2")
+library(FactoMineR)
+library(factoextra)
+library(ggfortify)
+library(BiocManager)
+```
+
 # Análisis de Componentes Principales con DESeq2
 
 Instalar y cargar la librería DESeq2. Esta librería contiene una serie de funcionalidades para realizar análisis estadísticos, "aguas abajo" (down-stream) de datos ómicos analizados con SALMON e importados con tximport.
-
-## Importar las librerias necesarias
-
-Son necesarias las librerías de "DESeq2", "readxl", "ggplot2", "ggrepel" y "plotly".
-
-```{r}
-# Instalar, si no está instalado, BiocManager: cargador de dependencias de bioconductor
-library(BiocManager)
-
-# Instalar, si no está instalado, weitexl: paquete para guardar como excel dataframes
-library(writexl)
-
-#Instalamos la librería dplyr necesaria para algunas de las funciones que se van a utilizar 
-library(dplyr)
-
-```
 
 ## Leer los datos
 
@@ -38,18 +37,19 @@ Cargamos los datos clínicos de los pacientes y los datos del transcriptoma.
 
 # El objeto que contiene toda la información esta guardado como .RDS
 txi <- readRDS("../import quant/txi.RDS")
+
 # Trabajaremos con los counts
 countData <- as.data.frame(txi$counts)
 
 # No vamos a trabajar más con txi, así que como ocupa 35MB, lo elimino de la memoria
 rm(txi)
 
-# La matriz tiene, en los nombres de las muetras, un sufijo después de una barra baja, que es el "sample ID" que se utilizó para secuenciarlo en illumina. Para que no de problemas, se van a renombrar
-
-# Elimino el sufijo "_Sxx" de los nombres de las columnas
+# Renombramos los nombres de la matriz para que sea más fácil trabajar con ellos, ya que contienen el sufijo "sample ID" que se utilizó para la secuenciación en illumina
+# Primero elimino el sufijo "_Sxx" de los nombres de las columnas
 lNewColnames <- unlist(strsplit(colnames(countData), "_"))[seq(1, 2 * ncol(countData), 2)]
+colnames(countData) <- unlist(strsplit(colnames(countData), "_"))[seq(1, 2 * ncol(countData), 2)]
 
-# Asigno los nuevos nombres de las columnas a la matriz
+# Luego asigno los nuevos nombres de las columnas a la matriz
 colnames(countData) <- lNewColnames
 
 # Muestro los primeros datos
@@ -58,9 +58,6 @@ head(countData)
 rm(lNewColnames)
 
 # --- Datos clínicos ---
-
-# Cargar la librería necesaria para leer archivos excel
-library("readxl")
 
 # Leer los datos del excel
 clinicalData <- as.data.frame(read_excel("../datos clinicos/dfClinical.xlsx"))
@@ -99,13 +96,10 @@ head(clinicalData)
 
 La librería DESeq2, permite fusionar los datos de los transcritos y los datos clínicos de los pacientes. De forma que por un lado tenemos la matriz con los datos de expresion génica (counts de los transcritos) y por otro lado tenemos los datos clínicos de los pacientes que son tratados como fáctores.
 
-Esta la vamos a utilizar para reducir el número de genes a únicamente aquellos que significativos en relación al tipo de grado.
+Esta la vamos a utilizar para reducir el número de genes a únicamente aquellos que sean  significativos (<0.5) en relación al tipo de grado.
 
 ```{r}
-# Cargar la librería
-library("DESeq2")
-
-# Aplicar la transformación que une counts + datos clínicos
+# Aplicar la transformación que une counts con los datos clínicos
 dds <- DESeqDataSetFromMatrix(countData = round(countData), colData = clinicalData, design = ~Grade)
 
 # Mostramos la información del objeto creado
@@ -120,7 +114,7 @@ head(results(dds, tidy=TRUE))
 
 ```
 
-Seguidamente, tenemos que filtrar para quedarnos con los genes que sean significativos y posteriormente fusionar el marco de datos con el nombre de estos genes, con el marco de datos de datos CountData donde se encuentran las lecturas que se obtuvieron de la secuenciación en el NGS de los 27 pacientes. Con la finalidad de quedarnos con tan solo con los counts de los genes de filtrados. 
+Seguidamente, se seleccionan aquellos genes con un p-valor ajustado significativo (<0.05) y se fusiona este marco de datos con "Countdata", donde se encuentran las lecturas de ARN-seq.
 
 ```{r}
 ##Filtramos los genes y nos quedamos unicamente con los que sean significativos (>0.05).
@@ -130,12 +124,11 @@ res_f <- as.data.frame(subset(res, res$padj <0.05))
 nrow(res_f)
 
 #Nombramos la columna de los genes como "gen" para poder fusionarla posteriormente y nos quedamos unicamente con esta columna 
-res_fn <-tibble::rownames_to_column(res_2, "gen")
-res_fn <- select(res_df,gen)
+resf <-tibble::rownames_to_column(res_f, "gen")
+res_fn <- dplyr::select(resf,gen)
 
 ##Nombramos la columna de los genes como "gen" para poder fusionarla posteriormente 
 countData_f <-tibble::rownames_to_column(countData, "gen")
-countData_f
 
 #Fusionamos ambos macos de datos con la función left_join
 count_df <- as.data.frame(left_join(res_fn,countData_f), by = join_by(gen))
@@ -143,6 +136,7 @@ count_df <- as.data.frame(left_join(res_fn,countData_f), by = join_by(gen))
 #Visualizamos los resultados 
 count_df
 ```
+
 ##PCA
 El siguiente paso es realizar el PCA, no obstante, primero necesitamos hacer una tranformación de las columas por las filas, ya que, la función del PCA necesita tener los genes en las columnas para poder sacar correctamente los componentes principales.
 
@@ -155,9 +149,10 @@ colnames(count_df_t) <- count_df[, 1]
 count_df_t
 ``` 
 
-Cuando ya tenemos el marco de datos transpuesto, podemos sacar el PCA perfectamente haciendo uso de la función FactoMiner.
 
-En primer lugar tenemos que  obtener un marco de datos con todos los datos (incluyendo los datos clinicos) para poder pintar el PCA en función a estos.
+Cuando ya tenemos el marco de datos transpuesto, podemos sacar el PCA haciendo uso de la función FactoMiner.
+
+En primer lugar tenemos que  obtener un marco de datos con todos los datos (incluyendo los datos clinicos) para poder pintar el PCA en función de estas variables.
 
 ```{r}
 #Cambiamos las variables numericas de count_df a caracteres para poder fusionarlos y hacer el PCA. Para ello, identificamos las columnas con caracteres y lo guardamos en una variable 
@@ -166,7 +161,6 @@ chars <- sapply(count_df2, is.numeric)
 
 #Convertimos las columnas identificadas a carácteres
 count_df2[ , chars] <- as.data.frame(apply(count_df2[ , chars], 2, as.character))
-count_df2
 
 #Ponemos el nombre "Samples" a la columna para poder fusionarlo posteriormente
 count__df2 <-tibble::rownames_to_column(count_df2, "Samples")
@@ -177,25 +171,44 @@ chars <- sapply(clinicalData_ch, is.numeric)
 
 #Convertimos las columnas identificadas a carácteres
 clinicalData_ch[ , chars] <- as.data.frame(apply(clinicalData_ch[ , chars], 2, as.character))
-clinicalData_ch
 
 #Fusionamos los dos macos de datos  
 df_final <- full_join(count__df2, clinicalData_ch)
-df_final
 ```
 
-Ahora vamos a pintar el PCA 
 ```{r}
-#Librerías necesarias para realizar este paso 
-library(FactoMineR)
-library(factoextra)
-
 #Análisis de componentes principales 
 pca2.nci <- PCA(X = count_df_t, scale.unit = TRUE, ncp = 27, graph = FALSE)
 
 #Representamos los sujetos en un PCA sin argumento  
 fviz_pca_ind(pca2.nci, col.ind = "#00AFBB")
 
+```
+
+```{r}
+## grafico de cajas (para justificar porque la dim1-2 son las más óptimas)
+datospca <- cbind(pca2.nci$ind$coord, clinicalData_ch)
+ggplot(datospca, aes(Grade,Dim.1)) + geom_boxplot() +
+  geom_boxplot(fill = "orange", outlier.colour = "red", outlier.shape = 1) +
+  theme_bw()
+
+datospca <- cbind(pca2.nci$ind$coord, clinicalData_ch)
+ggplot(datospca, aes(Grade,Dim.2)) + geom_boxplot() +
+  geom_boxplot(fill = "orange", outlier.colour = "red", outlier.shape = 1) +
+  theme_bw()
+
+datospca <- cbind(pca2.nci$ind$coord, clinicalData_ch)
+ggplot(datospca, aes(Grade,Dim.3)) + geom_boxplot() +
+  geom_boxplot(fill = "orange", outlier.colour = "red", outlier.shape = 1) +
+  theme_bw()
+
+datospca <- cbind(pca2.nci$ind$coord, clinicalData_ch)
+ggplot(datospca, aes(Grade,Dim.4)) + geom_boxplot() +
+  geom_boxplot(fill = "orange", outlier.colour = "red", outlier.shape = 1) +
+  theme_bw()
+```
+
+```{r}
 # Representamos los sujetos en un PCA en base al grado 
 fviz_pca_ind(pca2.nci,
              col.ind = df_final$Grade,
@@ -211,9 +224,6 @@ fviz_pca_ind(pca2.nci,
      palette = c("#00AFBB",  "#FC4E07"), 
      legend.title = "Edad de diagnóstico",
      addEllipses = FALSE)
-
-# ¿Como pongo <62 ,> 62 escrito en la tabla? 
-
 
 # Representamos los sujetos en un PCA en base al sexo
 fviz_pca_ind(pca2.nci,
@@ -235,66 +245,40 @@ fviz_pca_ind(pca2.nci,
      palette = c("#00AFBB",  "#FC4E07", "#E69F00", "#999999"),
      legend.title = "Hemisferio cerebral", 
      addEllipses = FALSE)
-
-#podríamos sobre poner las dos gráficas y ver sujetos y variables junto?
-
 ```
-Pintamos todos los genes en un PCA para ver cuales son más relevantes en cada grado . Yo para los genes mantendería este, antes que el otro, porque hay tantos que es imposible verlo bien. 
+
+
+Pintamos todos los genes en un PCA para ver cuales son más relevantes en cada grado  
 ```{r}
-library(ggfortify)
 #Sacamos una variable con los datos de las coordenadas de los genes 
 pca_genes <- as.data.frame(pca2.nci$var$coord)
 
 # Pintamos en una gráfica de puntos todos los genes según el PCA realizado 
-ggplot(pca_genes, aes(Dim.1, Dim.2)) + geom_point() + theme_bw()
+ggplot(pca_genes, aes(Dim.1,Dim.2)) + geom_point() + theme_bw()
 
-#Ordenamos los genes según su relevancia en el grado IV 
-#sort(pca_genes[,1], decreasing = TRUE)
 
-#puedo quedarme con los > 0 en un daraframe en Dim.1 y luego fusionar con el original, por lo que en teoría me quedaría solo con los que son significativos en grado IV y los nombres ya los tendría asiq good 
-#voy a probarlo 
+# nos quedamos con aquellos genes que sean significativos para las muestras de glioblastoma 
 genesIV <- as.data.frame(subset(pca_genes,pca_genes$Dim.1 >0)) 
-
 ```
 
+
+Guardamos la lista de genes en un excel cambiando su nombre de "ID" a "Symbol".
 ```{r}
 # Instalamos el paquete EnsDB.Hsapiens.v86
-library(BiocManager)
 BiocManager::install("EnsDb.Hsapiens.v86")
 library(EnsDb.Hsapiens.v86)
 
 #eliminamos el sufijo de los IDs porque con estos numeros la funcion no actúa
 IDgenesIV <- rownames(genesIV)
-lIDgenesIV <- unlist(strsplit(IDgenesIV, "\\."))[seq(1,2 * length(namesgenesIV), 2)]
+lIDgenesIV <- unlist(strsplit(IDgenesIV, "\\."))[seq(1,2 * length(IDgenesIV), 2)]
 
 #Realizamos la funcion necesaria para relacionar los IDs de los genes con su nombre
 columns(EnsDb.Hsapiens.v86)
 cols <- c("SYMBOL", "GENENAME")
-nombregenesIV <- select(EnsDb.Hsapiens.v86, keys = lIDgenesIV , columns = cols, keytype = "GENEID")
-
+nombregenesIV <- ensembldb::select(EnsDb.Hsapiens.v86, keys = lIDgenesIV, columns = cols, keytype = "GENEID")
 
 #Guardamos la lista en un excel para trabajar con ellos en la Gene Ontology 
-library(writexl)
 write_xlsx(nombregenesIV, path = "C:/Users/nuria/OneDrive - UMH/TFG/TFG_Glioblastomas_NuriaBiotec/PCA/genesIV.xlsx")
 ```
 
-
-# Ya tengo los genes que me interesan, ya los puedo llevar a un análisis de función biológica...
-```
-
-Ahora, podemos representar la siguiente gráfica para saber cuales son los genes que más contribuyen, es decir, aquellos genes cuya expresión cambia con mayor significancia en relación al grado que sufre el paciente.
-
-```{r}
-#Contribución de las variables (genes)
-fviz_contrib(pca2.nci, choice="var", axes=1:10, top =10)
-
-```
-
-```{r}
-## grafico de cajas (para justificar porque la dim1 es buena- no va en el TFG-)
-datospca <- cbind(pca2.nci$ind$coord, clinicalData_ch)
-ggplot(datospca, aes(Grade,Dim.1)) + geom_boxplot() + theme_bw()
-```
-
-
-
+Ahora que ya hemos conseguido extraer los DEGs, podemos llevarlos a un análisis para conocer su función biológica
